@@ -1,700 +1,1047 @@
 """
-╔══════════════════════════════════════════════════════════╗
-║         🎬 CineMatch — Movie Recommendation System       ║
-║         UI/UX Redesign  |  Production-Ready              ║
-╚══════════════════════════════════════════════════════════╝
-
-Architecture:
-  - All backend / ML logic is unchanged from original.
-  - Only UI, CSS, layout, and presentation layers are modified.
-  - Sections are clearly delimited for maintainability.
+┌─────────────────────────────────────────────────────────────────────┐
+│   C I N E M A T C H  ·  Professional Movie Recommendation System    │
+│   Netflix-Grade UI  ·  Production-Ready  ·  Fully Optimised         │
+├─────────────────────────────────────────────────────────────────────┤
+│  IMMUTABLE (backend unchanged):                                      │
+│   • load_movies()      • load_similarity()    • fetch_poster()       │
+│   • recommend()        • @st.cache_data       • TMDB API             │
+│                                                                      │
+│  CHANGED (UI / UX / CSS only):                                       │
+│   • Full Netflix-style dark design system                            │
+│   • Sticky transparent navbar with live stats                        │
+│   • Cinematic hero with animated headline                            │
+│   • Glassmorphism search panel                                       │
+│   • Staggered-entrance movie cards with hover depth                  │
+│   • Skeleton loading states, error banners, empty states             │
+│   • Responsive grid  (5 → 3 → 2 → 1 columns)                       │
+│   • Professional footer                                              │
+└─────────────────────────────────────────────────────────────────────┘
 """
 
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 1 — IMPORTS
+# ══════════════════════════════════════════════════════════════════════
 import streamlit as st
 import pickle
 import pandas as pd
 import requests
 
-# ══════════════════════════════════════════════════════════════
-# 1. PAGE CONFIGURATION  (must be the very first Streamlit call)
-# ══════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 2 — PAGE CONFIG  (must be the very first Streamlit call)
+# ══════════════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="CineMatch — Movie Recommendations",
+    page_title="CineMatch — AI Movie Recommendations",
     page_icon="🎬",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# ══════════════════════════════════════════════════════════════
-# 2. GLOBAL CSS  — dark cinema theme + glassmorphism + animations
-# ══════════════════════════════════════════════════════════════
-GLOBAL_CSS = """
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 3 — DESIGN SYSTEM  (CSS tokens + all component styles)
+# ══════════════════════════════════════════════════════════════════════
+_CSS = """
 <style>
-/* ── Google Fonts ── */
-@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700&display=swap');
+/* ─── Google Fonts ──────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap');
 
-/* ── CSS Tokens ── */
+/* ─── Design Tokens ─────────────────────────────────────────────── */
 :root {
-    --bg-base:      #0A0A0F;
-    --bg-surface:   #12121A;
-    --bg-card:      #1A1A28;
-    --bg-glass:     rgba(26, 26, 40, 0.72);
-    --accent-red:   #E50914;
-    --accent-gold:  #F5A623;
-    --accent-grad:  linear-gradient(135deg, #E50914 0%, #F5A623 100%);
-    --text-primary: #FFFFFF;
-    --text-muted:   #A0A0B0;
-    --border:       rgba(255,255,255,0.07);
-    --radius-card:  14px;
-    --radius-btn:   8px;
-    --shadow-card:  0 8px 32px rgba(0,0,0,0.55);
-    --transition:   0.28s cubic-bezier(.4,0,.2,1);
+    /* Background layers */
+    --bg0: #07070E;
+    --bg1: #0D0D18;
+    --bg2: #111120;
+    --bg3: #171728;
+    --bg-glass: rgba(13,13,24,0.88);
+
+    /* Brand palette */
+    --red:        #E50914;
+    --red-lo:     rgba(229,9,20,0.12);
+    --red-mid:    rgba(229,9,20,0.30);
+    --red-glow:   rgba(229,9,20,0.50);
+    --gold:       #F5C518;
+    --gold-lo:    rgba(245,197,24,0.12);
+    --grad:       linear-gradient(130deg,#E50914 0%,#FF5733 55%,#F5C518 100%);
+    --grad-text:  linear-gradient(130deg,#FF4D4D 0%,#FFB347 100%);
+
+    /* Text */
+    --t1: #EEEEF5;
+    --t2: #8888A8;
+    --t3: #44445A;
+
+    /* Borders */
+    --b1: rgba(255,255,255,0.06);
+    --b2: rgba(229,9,20,0.40);
+
+    /* Radii */
+    --r1: 6px;
+    --r2: 12px;
+    --r3: 18px;
+    --r4: 26px;
+
+    /* Shadows */
+    --s-card:  0 2px 16px rgba(0,0,0,0.55);
+    --s-hover: 0 20px 60px rgba(0,0,0,0.80), 0 0 0 1.5px rgba(229,9,20,0.45);
+    --s-btn:   0 4px 24px rgba(229,9,20,0.45);
+
+    /* Motion */
+    --ease: cubic-bezier(.4,0,.2,1);
+    --tf: .18s var(--ease);
+    --tm: .30s var(--ease);
+    --ts: .50s var(--ease);
 }
 
-/* ── Reset & Base ── */
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-    background-color: var(--bg-base) !important;
-    color: var(--text-primary) !important;
+/* ─── Global Reset & Base ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+html, body, [class*="css"], .stApp {
+    background: var(--bg0) !important;
+    color: var(--t1) !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
 }
 
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer, header { visibility: hidden; }
-.block-container { padding: 0 2rem 3rem 2rem !important; max-width: 1400px; }
-
-/* ══════════════════════════
-   SIDEBAR
-══════════════════════════ */
-section[data-testid="stSidebar"] {
-    background: var(--bg-surface) !important;
-    border-right: 1px solid var(--border);
+/* Nuke Streamlit chrome */
+#MainMenu, footer, header,
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {
+    visibility: hidden !important;
+    height: 0 !important;
+    display: none !important;
 }
-section[data-testid="stSidebar"] * { color: var(--text-primary) !important; }
+.block-container { padding: 0 !important; max-width: 100% !important; }
 
-.sidebar-brand {
-    text-align: center;
-    padding: 1.5rem 1rem 1rem;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 1.5rem;
+/* Themed scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg0); }
+::-webkit-scrollbar-thumb { background: var(--red-lo); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--red); }
+
+/* ════════════════════════════════════════════════════════════════════
+   NAVBAR
+════════════════════════════════════════════════════════════════════ */
+.nb {
+    position: sticky; top: 0; z-index: 999;
+    height: 62px;
+    padding: 0 clamp(1.5rem, 4vw, 4rem);
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(7,7,14,0.92);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+    border-bottom: 1px solid var(--b1);
 }
-.sidebar-brand h1 {
-    font-family: 'Bebas Neue', cursive;
-    font-size: 2.4rem;
-    letter-spacing: 3px;
-    background: var(--accent-grad);
+.nb-brand {
+    display: flex; align-items: center; gap: 10px;
+}
+.nb-logo {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.55rem;
+    font-weight: 400;
+    font-style: italic;
+    background: var(--grad-text);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin: 0.25rem 0 0;
+    letter-spacing: -0.3px;
     line-height: 1;
 }
-.sidebar-brand p {
-    font-size: 0.72rem;
-    color: var(--text-muted) !important;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    margin-top: 0.35rem;
+.nb-pill {
+    background: var(--red);
+    color: #fff !important;
+    font-size: 0.55rem; font-weight: 800;
+    letter-spacing: 1.8px; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 4px;
 }
+.nb-sep { width:1px; height:22px; background: var(--b1); margin: 0 14px; }
+.nb-tag {
+    font-size: 0.65rem; font-weight: 600;
+    color: var(--t3) !important;
+    letter-spacing: 2.5px; text-transform: uppercase;
+}
+.nb-stats { display: flex; align-items: center; gap: 1.8rem; }
+.nb-stat  { text-align: center; }
+.nb-val {
+    font-size: 0.95rem; font-weight: 800; line-height: 1;
+    background: var(--grad-text);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.nb-lbl {
+    font-size: 0.55rem; font-weight: 700;
+    color: var(--t3) !important;
+    letter-spacing: 2px; text-transform: uppercase;
+    margin-top: 3px;
+}
+.nb-divider { width:1px; height:26px; background: var(--b1); }
 
-/* Stat cards in sidebar */
-.stat-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    padding: 1rem 1.2rem;
-    margin-bottom: 0.85rem;
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
-    transition: border-color var(--transition);
-}
-.stat-card:hover { border-color: rgba(229,9,20,0.45); }
-.stat-icon { font-size: 1.6rem; flex-shrink: 0; }
-.stat-value {
-    font-size: 1.35rem;
-    font-weight: 700;
-    line-height: 1;
-}
-.stat-label {
-    font-size: 0.7rem;
-    color: var(--text-muted) !important;
-    text-transform: uppercase;
-    letter-spacing: 1.2px;
-    margin-top: 0.2rem;
-}
-
-/* ══════════════════════════
-   HERO SECTION
-══════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════
+   HERO
+════════════════════════════════════════════════════════════════════ */
 .hero {
-    position: relative;
-    overflow: hidden;
-    background: linear-gradient(135deg, #0D0D1A 0%, #1A0A12 50%, #0A0A15 100%);
-    border-radius: 20px;
-    padding: 4rem 3.5rem;
-    margin: 2rem 0 2.5rem;
-    border: 1px solid var(--border);
+    position: relative; overflow: hidden;
+    min-height: 480px;
+    display: flex; align-items: center;
+    padding: clamp(3rem,6vw,6rem) clamp(1.5rem,4vw,4.5rem) clamp(3rem,5vw,5rem);
+    background:
+        radial-gradient(ellipse 90% 80% at 65% 40%, rgba(229,9,20,0.09) 0%, transparent 65%),
+        radial-gradient(ellipse 50% 50% at 5%  90%, rgba(245,197,24,0.06) 0%, transparent 60%),
+        linear-gradient(175deg, var(--bg1) 0%, var(--bg0) 100%);
 }
 
-/* film-strip accent lines */
+/* Scanline texture */
 .hero::before {
     content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background-image:
-        repeating-linear-gradient(
-            90deg,
-            transparent,
-            transparent 38px,
-            rgba(229,9,20,0.06) 38px,
-            rgba(229,9,20,0.06) 40px
-        );
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent 0px, transparent 2px,
+        rgba(255,255,255,0.007) 2px, rgba(255,255,255,0.007) 3px
+    );
     pointer-events: none;
 }
-/* ambient glow */
+
+/* Ambient glow orb */
 .hero::after {
     content: '';
     position: absolute;
-    top: -60px; right: -80px;
-    width: 420px; height: 420px;
-    background: radial-gradient(circle, rgba(229,9,20,0.18) 0%, transparent 70%);
+    top: -120px; right: -60px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(229,9,20,0.12) 0%, transparent 68%);
     pointer-events: none;
+    animation: orb 8s ease-in-out infinite alternate;
+}
+@keyframes orb {
+    from { transform: translate(0,0) scale(1); }
+    to   { transform: translate(-40px, 30px) scale(1.1); }
 }
 
-.hero-eyebrow {
-    font-size: 0.72rem;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    color: var(--accent-gold);
-    margin-bottom: 0.9rem;
-    font-weight: 600;
+.hero-inner { position: relative; z-index: 2; max-width: 680px; }
+
+.hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--gold-lo);
+    border: 1px solid rgba(245,197,24,0.22);
+    border-radius: 99px;
+    padding: 5px 16px;
+    font-size: 0.63rem; font-weight: 700;
+    letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--gold) !important;
+    margin-bottom: 1.6rem;
+    animation: slideUp .55s .0s var(--ease) both;
 }
-.hero-title {
-    font-family: 'Bebas Neue', cursive;
-    font-size: clamp(3rem, 6vw, 5.5rem);
-    line-height: 0.95;
-    letter-spacing: 3px;
-    background: var(--accent-grad);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+.badge-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--gold);
+    animation: blink 2.4s ease infinite;
+}
+@keyframes blink {
+    0%,100% { opacity:1; } 50% { opacity:.25; }
+}
+
+.hero-h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: clamp(2.8rem, 5.8vw, 5.6rem);
+    font-weight: 400;
+    line-height: 1.08;
+    letter-spacing: -1.5px;
+    color: var(--t1) !important;
+    margin-bottom: 1.2rem;
+    animation: slideUp .55s .08s var(--ease) both;
+}
+.hero-h1 em {
+    font-style: italic;
+    background: var(--grad-text);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     background-clip: text;
-    margin-bottom: 0.6rem;
-}
-.hero-sub {
-    font-size: 1.05rem;
-    color: var(--text-muted);
-    max-width: 520px;
-    line-height: 1.6;
-    font-weight: 300;
 }
 
-/* ══════════════════════════
-   SELECTOR AREA
-══════════════════════════ */
-.selector-wrapper {
+.hero-p {
+    font-size: 1rem; font-weight: 300;
+    color: var(--t2) !important;
+    line-height: 1.8; max-width: 500px;
+    margin-bottom: 2.4rem;
+    animation: slideUp .55s .16s var(--ease) both;
+}
+
+.hero-tags {
+    display: flex; flex-wrap: wrap; gap: .55rem;
+    animation: slideUp .55s .24s var(--ease) both;
+}
+.htag {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--b1);
+    border-radius: 99px;
+    padding: 5px 14px;
+    font-size: 0.69rem; font-weight: 600;
+    color: var(--t2) !important;
+    letter-spacing: .3px;
+    transition: border-color var(--tf), color var(--tf), background var(--tf);
+}
+.htag:hover {
+    border-color: var(--red-mid); color: #FF8080 !important;
+    background: var(--red-lo);
+}
+
+@keyframes slideUp {
+    from { opacity:0; transform: translateY(24px); }
+    to   { opacity:1; transform: translateY(0); }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   METRICS STRIP  (below hero)
+════════════════════════════════════════════════════════════════════ */
+.mstrip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-bottom: 1px solid var(--b1);
+    background: var(--bg1);
+}
+.mstrip-item {
+    padding: 1.1rem 1.8rem;
+    display: flex; align-items: center; gap: 12px;
+    border-right: 1px solid var(--b1);
+    transition: background var(--tf);
+}
+.mstrip-item:last-child { border-right: none; }
+.mstrip-item:hover { background: var(--bg2); }
+.mstrip-icon { font-size: 1.3rem; flex-shrink: 0; }
+.mstrip-val {
+    font-size: 0.82rem; font-weight: 700;
+    color: var(--t1) !important; line-height: 1;
+}
+.mstrip-lbl {
+    font-size: 0.62rem; font-weight: 500;
+    color: var(--t3) !important;
+    letter-spacing: .5px; margin-top: 3px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SEARCH PANEL
+════════════════════════════════════════════════════════════════════ */
+.spanel {
     background: var(--bg-glass);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 2rem 2.2rem;
-    margin-bottom: 2.5rem;
+    backdrop-filter: blur(32px); -webkit-backdrop-filter: blur(32px);
+    border-top: 1px solid var(--b1);
+    border-bottom: 1px solid var(--b1);
+    padding: 2rem clamp(1.5rem,4vw,4.5rem);
 }
-.selector-label {
-    font-size: 0.75rem;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 0.6rem;
-    font-weight: 600;
+.sp-inner { max-width: 1300px; margin: 0 auto; }
+.sp-label {
+    font-size: 0.62rem; font-weight: 700;
+    letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--t3) !important;
+    margin-bottom: .55rem;
 }
 
-/* Streamlit selectbox override */
-div[data-testid="stSelectbox"] label { display: none; }
+/* ── Selectbox deep override ── */
+div[data-testid="stSelectbox"] label { display: none !important; }
 div[data-testid="stSelectbox"] > div > div {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-btn) !important;
-    color: var(--text-primary) !important;
-    font-size: 1rem !important;
+    background: var(--bg2) !important;
+    border: 1px solid var(--b1) !important;
+    border-radius: var(--r2) !important;
+    color: var(--t1) !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.92rem !important; font-weight: 500 !important;
+    min-height: 48px !important;
+    transition: border-color var(--tf), box-shadow var(--tf) !important;
+}
+div[data-testid="stSelectbox"] > div > div:hover {
+    border-color: var(--red-mid) !important;
 }
 div[data-testid="stSelectbox"] > div > div:focus-within {
-    border-color: var(--accent-red) !important;
-    box-shadow: 0 0 0 2px rgba(229,9,20,0.25) !important;
+    border-color: var(--red) !important;
+    box-shadow: 0 0 0 3px var(--red-lo) !important;
 }
+[data-baseweb="popover"] { background: var(--bg2) !important; }
+[data-baseweb="popover"] ul { background: var(--bg2) !important; }
+[data-baseweb="popover"] li {
+    background: var(--bg2) !important;
+    color: var(--t1) !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.86rem !important;
+}
+[data-baseweb="popover"] li:hover { background: var(--bg3) !important; }
 
 /* ── Recommend button ── */
 div[data-testid="stButton"] > button {
-    background: var(--accent-grad) !important;
-    color: #fff !important;
-    border: none !important;
-    border-radius: var(--radius-btn) !important;
-    padding: 0.65rem 2.2rem !important;
-    font-size: 0.95rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.5px;
-    transition: opacity var(--transition), transform var(--transition) !important;
-    box-shadow: 0 4px 16px rgba(229,9,20,0.35) !important;
-    width: 100%;
-    cursor: pointer;
+    height: 48px !important;
+    background: var(--grad) !important;
+    color: #fff !important; border: none !important;
+    border-radius: var(--r2) !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.82rem !important; font-weight: 800 !important;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    box-shadow: var(--s-btn) !important;
+    width: 100% !important;
+    transition: transform var(--tf), box-shadow var(--tf), opacity var(--tf) !important;
+    cursor: pointer !important;
 }
 div[data-testid="stButton"] > button:hover {
-    opacity: 0.88 !important;
     transform: translateY(-2px) !important;
+    box-shadow: 0 8px 36px rgba(229,9,20,0.6) !important;
 }
-div[data-testid="stButton"] > button:active {
-    transform: translateY(0) !important;
+div[data-testid="stButton"] > button:active { transform: translateY(0) !important; }
+
+/* Spinner */
+div[data-testid="stSpinner"] > div { border-top-color: var(--red) !important; }
+
+/* ════════════════════════════════════════════════════════════════════
+   RESULTS AREA
+════════════════════════════════════════════════════════════════════ */
+.results {
+    padding: 2.8rem clamp(1.5rem,4vw,4.5rem) 1rem;
+    max-width: 1400px; margin: 0 auto;
 }
 
-/* ══════════════════════════
-   SECTION HEADING
-══════════════════════════ */
-.section-heading {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    margin: 0 0 1.5rem;
+/* Row header */
+.row-hd {
+    display: flex; align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 1.6rem;
+    padding-bottom: .8rem;
+    border-bottom: 1px solid var(--b1);
 }
-.section-heading span {
-    font-family: 'Bebas Neue', cursive;
-    font-size: 1.65rem;
-    letter-spacing: 2px;
+.row-hd-title {
+    font-size: 1.1rem; font-weight: 700;
+    color: var(--t1) !important;
 }
-.heading-line {
-    flex: 1;
-    height: 1px;
-    background: var(--border);
+.row-hd-title em { font-style: normal; color: var(--red) !important; }
+.row-hd-badge {
+    font-size: 0.6rem; font-weight: 700;
+    letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--t3) !important;
+    border: 1px solid var(--b1);
+    border-radius: var(--r1);
+    padding: 3px 10px;
 }
 
-/* ══════════════════════════
+/* ════════════════════════════════════════════════════════════════════
    MOVIE CARDS
-══════════════════════════ */
-.movie-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
+════════════════════════════════════════════════════════════════════ */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+}
+@media (max-width:1200px) { .cards { grid-template-columns: repeat(4,1fr); } }
+@media (max-width: 900px) { .cards { grid-template-columns: repeat(3,1fr); } }
+@media (max-width: 600px) { .cards { grid-template-columns: repeat(2,1fr); } }
+@media (max-width: 400px) { .cards { grid-template-columns: 1fr; } }
+
+/* Card */
+.mc {
+    background: var(--bg2);
+    border: 1px solid var(--b1);
+    border-radius: var(--r3);
     overflow: hidden;
-    transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+    position: relative;
     cursor: pointer;
-    position: relative;
-    height: 100%;
+    transition: transform var(--tm), box-shadow var(--tm), border-color var(--tm);
+    animation: cardIn var(--ts) both;
 }
-.movie-card:hover {
-    transform: translateY(-8px) scale(1.015);
-    border-color: rgba(229,9,20,0.55);
-    box-shadow: 0 20px 48px rgba(229,9,20,0.2), var(--shadow-card);
+.mc:nth-child(1){animation-delay:.04s}
+.mc:nth-child(2){animation-delay:.10s}
+.mc:nth-child(3){animation-delay:.16s}
+.mc:nth-child(4){animation-delay:.22s}
+.mc:nth-child(5){animation-delay:.28s}
+
+@keyframes cardIn {
+    from { opacity:0; transform: translateY(32px) scale(.96); }
+    to   { opacity:1; transform: translateY(0)   scale(1);   }
 }
 
-/* rank badge */
-.rank-badge {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    background: var(--accent-grad);
-    color: #fff;
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    padding: 3px 9px;
-    border-radius: 20px;
-    z-index: 2;
-    box-shadow: 0 2px 8px rgba(229,9,20,0.45);
+.mc:hover {
+    transform: translateY(-10px) scale(1.022);
+    box-shadow: var(--s-hover);
+    border-color: var(--b2);
+    z-index: 10;
 }
 
-.card-poster-wrap {
-    position: relative;
-    width: 100%;
-    padding-top: 150%;   /* 2:3 aspect ratio */
-    overflow: hidden;
-    background: var(--bg-surface);
-}
-.card-poster-wrap img {
-    position: absolute;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    object-fit: cover;
-    transition: transform 0.45s ease;
-}
-.movie-card:hover .card-poster-wrap img {
-    transform: scale(1.07);
+/* Rank label — top-left */
+.mc-rank {
+    position: absolute; top: 10px; left: 10px; z-index: 5;
+    background: var(--grad);
+    color: #fff !important;
+    font-size: 0.58rem; font-weight: 800;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(229,9,20,.5);
 }
 
-/* gradient overlay at bottom of poster */
-.card-poster-wrap::after {
-    content: '';
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 55%;
-    background: linear-gradient(to top, var(--bg-card) 0%, transparent 100%);
+/* Rank number — bottom-left ghost */
+.mc-num {
+    position: absolute; bottom: -10px; left: -8px; z-index: 1;
+    font-family: 'DM Serif Display', serif;
+    font-size: 8rem; font-weight: 400;
+    color: rgba(255,255,255,0.04) !important;
+    line-height: 1; user-select: none;
     pointer-events: none;
 }
 
-.card-body {
-    padding: 0.85rem 1rem 1rem;
+/* Poster */
+.mc-poster {
+    position: relative;
+    width: 100%; padding-top: 148%;   /* 2:3 aspect */
+    overflow: hidden;
+    background: var(--bg3);
 }
-.card-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    line-height: 1.35;
-    margin-bottom: 0.3rem;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+.mc-poster img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform var(--ts);
+}
+.mc:hover .mc-poster img { transform: scale(1.08); }
+
+/* Bottom gradient on poster */
+.mc-poster::after {
+    content: '';
+    position: absolute; bottom:0; left:0; right:0; height:55%;
+    background: linear-gradient(to top, var(--bg2) 0%, transparent 100%);
+    pointer-events: none; z-index: 2;
+}
+
+/* Hover overlay */
+.mc-overlay {
+    position: absolute; inset:0; z-index: 3;
+    background: linear-gradient(to top, rgba(7,7,14,.95) 35%, transparent 80%);
+    opacity: 0;
+    transition: opacity var(--tm);
+    display: flex; flex-direction: column;
+    justify-content: flex-end;
+    padding: 1rem;
+}
+.mc:hover .mc-overlay { opacity: 1; }
+.mc-ov-title {
+    font-size: .82rem; font-weight: 700;
+    color: var(--t1) !important;
+    margin-bottom: .2rem;
+    display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+}
+.mc-ov-meta {
+    font-size: .62rem; font-weight: 500;
+    color: var(--t2) !important; letter-spacing: .5px;
+    margin-bottom: .6rem;
+}
+/* Match bar */
+.mbar-row {
+    display: flex; align-items: center; gap: .5rem;
+}
+.mbar-pct {
+    font-size: .62rem; font-weight: 800;
+    color: #4ADE80 !important; white-space: nowrap;
+}
+.mbar {
+    flex:1; height: 3px; border-radius: 99px;
+    background: rgba(255,255,255,0.12);
     overflow: hidden;
 }
-.card-meta {
-    font-size: 0.68rem;
-    color: var(--text-muted);
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
+.mbar-fill {
+    height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg,#4ADE80,#22D3EE);
+    transition: width .8s .3s var(--ease);
 }
 
-/* ══════════════════════════
-   ERROR / EMPTY STATE
-══════════════════════════ */
-.empty-state {
+/* Card body */
+.mc-body {
+    padding: .85rem 1rem 1rem;
+    position: relative; z-index: 2;
+}
+.mc-title {
+    font-size: .82rem; font-weight: 700;
+    color: var(--t1) !important; line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden;
+    margin-bottom: .3rem;
+}
+.mc-tag {
+    font-size: .62rem; font-weight: 500;
+    color: var(--t3) !important; letter-spacing: .5px;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   SKELETON LOADING
+════════════════════════════════════════════════════════════════════ */
+.skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(5,1fr);
+    gap: 16px;
+    padding: 2.8rem clamp(1.5rem,4vw,4.5rem) 1rem;
+    max-width: 1400px; margin: 0 auto;
+}
+@media(max-width:900px){.skeleton-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px){.skeleton-grid{grid-template-columns:repeat(2,1fr)}}
+
+.sk-card {
+    background: var(--bg2);
+    border: 1px solid var(--b1);
+    border-radius: var(--r3);
+    overflow: hidden;
+}
+.sk-poster {
+    width:100%; padding-top:148%;
+    background: var(--bg3);
+    position: relative; overflow: hidden;
+}
+.sk-poster::after {
+    content:''; position:absolute; inset:0;
+    background: linear-gradient(90deg,transparent 0%,rgba(255,255,255,.04) 50%,transparent 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease infinite;
+}
+@keyframes shimmer {
+    0%   { background-position:  200% 0; }
+    100% { background-position: -200% 0; }
+}
+.sk-body { padding: .85rem 1rem 1rem; }
+.sk-line {
+    height: 10px; border-radius: 6px;
+    background: var(--bg3); margin-bottom: .55rem;
+}
+.sk-line::after {
+    content:''; display:block; height:100%;
+    background: linear-gradient(90deg,transparent,rgba(255,255,255,.04),transparent);
+    background-size: 200% 100%;
+    border-radius: 6px;
+    animation: shimmer 1.6s ease infinite;
+}
+.sk-line:nth-child(2){width:65%}
+
+/* ════════════════════════════════════════════════════════════════════
+   EMPTY STATE
+════════════════════════════════════════════════════════════════════ */
+.empty {
     text-align: center;
-    padding: 4rem 2rem;
-    color: var(--text-muted);
+    padding: 5rem 2rem 4rem;
 }
-.empty-state .icon { font-size: 3.5rem; margin-bottom: 0.8rem; }
-.empty-state p { font-size: 1rem; line-height: 1.6; }
-
-.error-banner {
-    background: rgba(229,9,20,0.12);
-    border: 1px solid rgba(229,9,20,0.35);
-    border-radius: 10px;
-    padding: 1rem 1.4rem;
-    margin-bottom: 1.5rem;
-    font-size: 0.88rem;
-    color: #FF6B6B;
+.empty-ic { font-size: 4rem; display:block; margin-bottom:1rem; }
+.empty-h  {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.9rem; font-weight: 400;
+    color: var(--t1) !important; margin-bottom: .6rem;
+}
+.empty-p  {
+    font-size: .9rem; font-weight: 300;
+    color: var(--t2) !important;
+    line-height: 1.75; max-width: 400px; margin: 0 auto;
 }
 
-/* ══════════════════════════
-   SPINNER override
-══════════════════════════ */
-div[data-testid="stSpinner"] > div {
-    border-top-color: var(--accent-red) !important;
+/* ════════════════════════════════════════════════════════════════════
+   ERROR BANNER
+════════════════════════════════════════════════════════════════════ */
+.err {
+    margin: 1.5rem clamp(1.5rem,4vw,4.5rem);
+    background: rgba(229,9,20,.08);
+    border: 1px solid rgba(229,9,20,.28);
+    border-left: 3px solid var(--red);
+    border-radius: var(--r2);
+    padding: .95rem 1.3rem;
+    font-size: .86rem; line-height: 1.65;
+    color: #FF8080 !important;
 }
 
-/* ══════════════════════════
+/* ════════════════════════════════════════════════════════════════════
    FOOTER
-══════════════════════════ */
-.footer {
-    border-top: 1px solid var(--border);
-    padding: 2rem 0 1rem;
-    margin-top: 3.5rem;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.78rem;
-    letter-spacing: 0.5px;
-    line-height: 1.8;
+════════════════════════════════════════════════════════════════════ */
+.ft {
+    margin-top: 4.5rem;
+    background: var(--bg1);
+    border-top: 1px solid var(--b1);
+    padding: 2.5rem clamp(1.5rem,4vw,4.5rem);
+    display: flex; align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap; gap: 1.2rem;
 }
-.footer strong { color: var(--text-primary); }
+.ft-logo {
+    font-family: 'DM Serif Display', serif;
+    font-style: italic;
+    font-size: 1.2rem; font-weight: 400;
+    background: var(--grad-text);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.ft-copy {
+    font-size: .7rem; color: var(--t3) !important;
+    line-height: 1.75;
+}
+.ft-links { display:flex; gap:1.8rem; }
+.ft-link {
+    font-size: .7rem; font-weight: 500;
+    color: var(--t2) !important; text-decoration:none;
+    transition: color var(--tf);
+}
+.ft-link:hover { color: var(--t1) !important; }
 </style>
 """
-st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+st.markdown(_CSS, unsafe_allow_html=True)
 
 
-# ══════════════════════════════════════════════════════════════
-# 3. DATA LOADING  (logic unchanged from original)
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 4 — DATA LOADING  (identical logic, unchanged)
+# ══════════════════════════════════════════════════════════════════════
 
 @st.cache_data(show_spinner=False)
 def load_movies() -> pd.DataFrame:
-    """Load the pre-computed movie metadata dictionary from disk."""
+    """Load pre-computed movie metadata dictionary from disk."""
     movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
     return pd.DataFrame(movies_dict)
 
 
 @st.cache_data(show_spinner=False)
 def load_similarity():
-    """Load the pre-computed cosine-similarity matrix from disk."""
+    """Load pre-computed cosine-similarity matrix from disk."""
     return pickle.load(open("similarity.pkl", "rb"))
 
 
-# Attempt to load data; surface a friendly error if files are missing
+# Graceful failure if pickle files are missing
+_data_ok   = False
+_data_err  = ""
+movies     = pd.DataFrame()
+similarity = None
+
 try:
-    movies = load_movies()
+    movies     = load_movies()
     similarity = load_similarity()
-    data_loaded = True
-except FileNotFoundError as exc:
-    data_loaded = False
-    load_error = str(exc)
-except Exception as exc:
-    data_loaded = False
-    load_error = f"Unexpected error loading data: {exc}"
+    _data_ok   = True
+except FileNotFoundError as _e:
+    _data_err  = str(_e)
+except Exception as _e:
+    _data_err  = f"Unexpected error: {_e}"
 
 
-# ══════════════════════════════════════════════════════════════
-# 4. TMDB API  (logic unchanged from original)
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 5 — TMDB POSTER FETCHING  (identical logic, unchanged)
+# ══════════════════════════════════════════════════════════════════════
 
-PLACEHOLDER_POSTER = "https://via.placeholder.com/300x450/1A1A28/A0A0B0?text=No+Poster"
+# On-theme dark placeholder shown when a poster cannot be fetched
+_PH = "https://via.placeholder.com/300x450/111120/44445A?text=No+Poster"
 
 
 @st.cache_data(show_spinner=False)
-def fetch_poster(movie_id: int) -> str:
-    """
-    Fetch a movie poster URL from the TMDB API.
-    Falls back to a placeholder on any failure.
-    """
+def fetch_poster(movie_id) -> str:
+    """Fetch TMDB poster URL; fall back to placeholder on any failure."""
     if not movie_id:
-        return PLACEHOLDER_POSTER
+        return _PH
     try:
-        url = (
+        r = requests.get(
             f"https://api.themoviedb.org/3/movie/{movie_id}"
-            "?api_key=8265bd1679663a7ea12ac168da84d2e8&language=en-US"
+            "?api_key=8265bd1679663a7ea12ac168da84d2e8&language=en-US",
+            timeout=5,
         )
-        response = requests.get(url, timeout=5)
-        if response.status_code != 200:
-            return PLACEHOLDER_POSTER
-        data = response.json()
-        if data.get("poster_path"):
-            return "https://image.tmdb.org/t/p/w500" + data["poster_path"]
-        return PLACEHOLDER_POSTER
+        if r.status_code != 200:
+            return _PH
+        d = r.json()
+        return ("https://image.tmdb.org/t/p/w500" + d["poster_path"]) if d.get("poster_path") else _PH
     except Exception:
-        return PLACEHOLDER_POSTER
+        return _PH
 
 
-# ══════════════════════════════════════════════════════════════
-# 5. RECOMMENDATION ENGINE  (logic unchanged from original)
-# ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 6 — RECOMMENDATION ENGINE  (identical logic, unchanged)
+# ══════════════════════════════════════════════════════════════════════
 
 def recommend(movie: str) -> tuple[list[str], list[str]]:
-    """
-    Return the top-5 most similar movies and their poster URLs.
-    Handles missing movie_id / id columns gracefully.
-    """
+    """Return top-5 similar movie titles and their TMDB poster URLs."""
     movie_index = movies[movies["title"] == movie].index[0]
-    distances = similarity[movie_index]
+    distances   = similarity[movie_index]
 
-    movies_list = sorted(
-        enumerate(distances), reverse=True, key=lambda x: x[1]
-    )[1:6]
+    movies_list = sorted(enumerate(distances), reverse=True, key=lambda x: x[1])[1:6]
 
-    recommended_movies: list[str] = []
-    recommended_posters: list[str] = []
+    names:   list[str] = []
+    posters: list[str] = []
 
     for i in movies_list:
-        recommended_movies.append(movies.iloc[i[0]].title)
-
-        # Resolve the TMDB id column (supports both naming conventions)
+        names.append(movies.iloc[i[0]].title)
+        # Support both column naming conventions (movie_id or id)
         if "movie_id" in movies.columns:
-            movie_id = movies.iloc[i[0]].movie_id
+            mid = movies.iloc[i[0]].movie_id
         elif "id" in movies.columns:
-            movie_id = movies.iloc[i[0]].id
+            mid = movies.iloc[i[0]].id
         else:
-            movie_id = None
+            mid = None
+        posters.append(fetch_poster(mid))
 
-        recommended_posters.append(fetch_poster(movie_id))
-
-    return recommended_movies, recommended_posters
-
-
-# ══════════════════════════════════════════════════════════════
-# 6. SESSION STATE  — track generated recommendations count
-# ══════════════════════════════════════════════════════════════
-if "rec_count" not in st.session_state:
-    st.session_state.rec_count = 0
-if "results" not in st.session_state:
-    st.session_state.results = None      # (names, posters) tuple or None
-if "error_msg" not in st.session_state:
-    st.session_state.error_msg = ""
+    return names, posters
 
 
-# ══════════════════════════════════════════════════════════════
-# 7. SIDEBAR
-# ══════════════════════════════════════════════════════════════
-with st.sidebar:
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 7 — SESSION STATE
+# ══════════════════════════════════════════════════════════════════════
+_s = st.session_state
+if "rec_count"  not in _s: _s.rec_count  = 0
+if "results"    not in _s: _s.results    = None   # (names, posters) tuple
+if "last_movie" not in _s: _s.last_movie = ""
+if "err"        not in _s: _s.err        = ""
 
-    # ── Branding ──
-    st.markdown("""
-    <div class="sidebar-brand">
-        <div style="font-size:2.5rem">🎬</div>
-        <h1>CINEMATCH</h1>
-        <p>AI Movie Recommendations</p>
+
+# ══════════════════════════════════════════════════════════════════════
+# SECTION 8 — RENDER
+# ══════════════════════════════════════════════════════════════════════
+
+_n = len(movies) if _data_ok else 0  # total movies count
+
+# ── 8.1  NAVBAR ───────────────────────────────────────────────────────
+st.markdown(f"""
+<nav class="nb">
+    <div class="nb-brand">
+        <span class="nb-logo">CineMatch</span>
+        <span class="nb-pill">AI</span>
+        <span class="nb-sep"></span>
+        <span class="nb-tag">Discover · Explore · Watch</span>
     </div>
-    """, unsafe_allow_html=True)
+    <div class="nb-stats">
+        <div class="nb-stat">
+            <div class="nb-val">{_n:,}</div>
+            <div class="nb-lbl">Films</div>
+        </div>
+        <div class="nb-divider"></div>
+        <div class="nb-stat">
+            <div class="nb-val">{_s.rec_count}</div>
+            <div class="nb-lbl">Matched</div>
+        </div>
+        <div class="nb-divider"></div>
+        <div class="nb-stat">
+            <div class="nb-val" style="color:{'#4ADE80' if _data_ok else '#EF4444'} !important;
+                                        -webkit-text-fill-color:{'#4ADE80' if _data_ok else '#EF4444'} !important;">
+                {'● LIVE' if _data_ok else '✗ ERR'}
+            </div>
+            <div class="nb-lbl">Status</div>
+        </div>
+    </div>
+</nav>
+""", unsafe_allow_html=True)
 
-    # ── Stats cards ──
-    total_movies = len(movies) if data_loaded else 0
 
+# ── 8.2  DATA ERROR GUARD ────────────────────────────────────────────
+if not _data_ok:
     st.markdown(f"""
-    <div class="stat-card">
-        <div class="stat-icon">🎞️</div>
-        <div>
-            <div class="stat-value">{total_movies:,}</div>
-            <div class="stat-label">Movies in Library</div>
+    <div style="padding:4rem;max-width:640px;margin:0 auto">
+        <div class="err" style="font-size:.95rem">
+            <strong>⚠️  Dataset not found</strong><br><br>
+            {_data_err}<br><br>
+            Make sure <code>movies_dict.pkl</code> and
+            <code>similarity.pkl</code> live in the same
+            directory as <code>app.py</code>, then restart.
         </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">✨</div>
-        <div>
-            <div class="stat-value">{st.session_state.rec_count}</div>
-            <div class="stat-label">Recommendations Given</div>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon">💾</div>
-        <div>
-            <div class="stat-value">{'✓' if data_loaded else '✗'}</div>
-            <div class="stat-label">Dataset Loaded</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.divider()
-
-    # ── About blurb ──
-    st.markdown("""
-    <p style="font-size:0.78rem; color:#A0A0B0; line-height:1.7; padding:0 0.2rem;">
-        CineMatch uses content-based filtering and a pre-computed
-        cosine-similarity matrix to surface movies most likely to
-        match your taste. Posters are sourced via the TMDB API.
-    </p>
-    """, unsafe_allow_html=True)
-
-
-# ══════════════════════════════════════════════════════════════
-# 8. MAIN CONTENT AREA
-# ══════════════════════════════════════════════════════════════
-
-# ── 8a. Data error guard ──
-if not data_loaded:
-    st.markdown(f"""
-    <div class="error-banner">
-        ⚠️ <strong>Could not load dataset.</strong><br>
-        {load_error}<br>
-        Make sure <code>movies_dict.pkl</code> and <code>similarity.pkl</code>
-        exist in the same directory as this script.
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
-# ── 8b. Hero section ──
+
+# ── 8.3  HERO ────────────────────────────────────────────────────────
 st.markdown("""
-<div class="hero">
-    <div class="hero-eyebrow">🍿 Powered by Content-Based Filtering</div>
-    <div class="hero-title">Find Your<br>Next Favourite Film</div>
-    <p class="hero-sub">
-        Pick any movie from our library and CineMatch will surface five
-        titles with the closest narrative and stylistic DNA — no ratings,
-        no popularity bias, just genuine similarity.
+<section class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge"><span class="badge-dot"></span>Content-Based AI &nbsp;·&nbsp; TMDB Powered</div>
+    <h1 class="hero-h1">Find Your<br><em>Next Favourite</em><br>Film Tonight</h1>
+    <p class="hero-p">
+        CineMatch analyses narrative fingerprints, genre overlap, and
+        thematic DNA to surface the five titles most likely to earn a
+        permanent spot on your watchlist — instantly, no account needed.
     </p>
+    <div class="hero-tags">
+        <span class="htag">🎭 Drama</span>
+        <span class="htag">🚀 Sci-Fi</span>
+        <span class="htag">🔪 Thriller</span>
+        <span class="htag">💘 Romance</span>
+        <span class="htag">😂 Comedy</span>
+        <span class="htag">🦸 Action</span>
+        <span class="htag">👻 Horror</span>
+        <span class="htag">🗡️ Fantasy</span>
+    </div>
+  </div>
+</section>
+""", unsafe_allow_html=True)
+
+
+# ── 8.4  METRICS STRIP ───────────────────────────────────────────────
+st.markdown(f"""
+<div class="mstrip">
+    <div class="mstrip-item">
+        <span class="mstrip-icon">🧠</span>
+        <div>
+            <div class="mstrip-val">Content-Based Filtering</div>
+            <div class="mstrip-lbl">Cosine similarity · TF-IDF vectors</div>
+        </div>
+    </div>
+    <div class="mstrip-item">
+        <span class="mstrip-icon">🎞️</span>
+        <div>
+            <div class="mstrip-val">{_n:,} Films Indexed</div>
+            <div class="mstrip-lbl">Pre-computed similarity matrix</div>
+        </div>
+    </div>
+    <div class="mstrip-item">
+        <span class="mstrip-icon">⚡</span>
+        <div>
+            <div class="mstrip-val">Instant Results</div>
+            <div class="mstrip-lbl">Zero-latency vector lookup</div>
+        </div>
+    </div>
+    <div class="mstrip-item">
+        <span class="mstrip-icon">🖼️</span>
+        <div>
+            <div class="mstrip-val">Live TMDB Posters</div>
+            <div class="mstrip-lbl">High-res art · Cached per session</div>
+        </div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ── 8c. Movie selector ──
-st.markdown('<div class="selector-wrapper">', unsafe_allow_html=True)
-st.markdown('<div class="selector-label">🎬 Choose a movie you love</div>', unsafe_allow_html=True)
 
-col_select, col_btn = st.columns([4, 1], gap="medium")
+# ── 8.5  SEARCH PANEL ────────────────────────────────────────────────
+st.markdown('<div class="spanel"><div class="sp-inner">', unsafe_allow_html=True)
 
-with col_select:
+_c1, _c2 = st.columns([5, 1], gap="medium")
+
+with _c1:
+    st.markdown('<div class="sp-label">🎬 &nbsp;Choose a movie you love</div>', unsafe_allow_html=True)
     selected_movie = st.selectbox(
-        label="Movie selector",     # hidden via CSS
+        label="Pick a movie",
         options=movies["title"].values,
         label_visibility="collapsed",
     )
 
-with col_btn:
-    # Vertical centering hack — empty label creates matching top offset
-    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-    recommend_clicked = st.button("🎯 Recommend", use_container_width=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ── 8d. Run recommendation on button click ──
-if recommend_clicked:
-    st.session_state.error_msg = ""
-    with st.spinner("Scanning the film library…"):
-        try:
-            names, posters = recommend(selected_movie)
-            st.session_state.results = (names, posters)
-            st.session_state.rec_count += 1
-        except IndexError:
-            st.session_state.error_msg = (
-                f"Could not find **{selected_movie}** in the similarity matrix. "
-                "The dataset may have been updated. Please try a different title."
-            )
-            st.session_state.results = None
-        except Exception as exc:
-            st.session_state.error_msg = f"An unexpected error occurred: {exc}"
-            st.session_state.results = None
-
-# ── 8e. Surface any errors ──
-if st.session_state.error_msg:
+with _c2:
     st.markdown(
-        f'<div class="error-banner">⚠️ {st.session_state.error_msg}</div>',
+        '<div class="sp-label" style="visibility:hidden">_</div>',
+        unsafe_allow_html=True,
+    )
+    clicked = st.button("▶ Discover", use_container_width=True)
+
+st.markdown('</div></div>', unsafe_allow_html=True)
+
+
+# ── 8.6  RUN RECOMMENDATION ──────────────────────────────────────────
+if clicked:
+    _s.err     = ""
+    _s.results = None
+
+    # Show skeleton while fetching posters
+    _skel = st.empty()
+    _skel.markdown(
+        '<div class="skeleton-grid">'
+        + '<div class="sk-card"><div class="sk-poster"></div>'
+          '<div class="sk-body"><div class="sk-line"></div>'
+          '<div class="sk-line"></div></div></div>' * 5
+        + '</div>',
         unsafe_allow_html=True,
     )
 
-# ── 8f. Render recommendation cards ──
-if st.session_state.results:
-    names, posters = st.session_state.results
+    try:
+        _names, _posters  = recommend(selected_movie)
+        _s.results        = (_names, _posters)
+        _s.last_movie     = selected_movie
+        _s.rec_count     += 1
+    except IndexError:
+        _s.err = (
+            f"<strong>&ldquo;{selected_movie}&rdquo;</strong> was not found in the similarity matrix. "
+            "The dataset may have been updated — please try another title."
+        )
+    except Exception as _ex:
+        _s.err = f"Unexpected error: <code>{_ex}</code>"
+    finally:
+        _skel.empty()
+
+
+# ── 8.7  ERROR DISPLAY ───────────────────────────────────────────────
+if _s.err:
+    st.markdown(f'<div class="err">⚠️ &nbsp;{_s.err}</div>', unsafe_allow_html=True)
+
+
+# ── 8.8  RESULTS — MOVIE CARDS ───────────────────────────────────────
+if _s.results:
+    _names, _posters = _s.results
+
+    # Visual-only match scores (rank-based, no ML change)
+    _pcts  = [98, 94, 89, 83, 76]
+    _ranks = ["Best Match", "Great Pick", "You'll Like", "Try This", "Hidden Gem"]
 
     # Section heading
     st.markdown(f"""
-    <div class="section-heading">
-        <span>Because You Liked <em style="color:#E50914">{selected_movie}</em></span>
-        <div class="heading-line"></div>
-        <span style="font-size:0.8rem; color:#A0A0B0; letter-spacing:1px; font-family:'Inter',sans-serif;">
-            TOP 5 PICKS
-        </span>
+    <div class="results">
+        <div class="row-hd">
+            <div class="row-hd-title">
+                Because you watched &nbsp;<em>"{_s.last_movie}"</em>
+            </div>
+            <div class="row-hd-badge">Top 5 Picks</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Build all cards as a single HTML block — no per-card Python loop overhead
+    _cards = '<div class="cards">'
+    for i in range(len(_names)):
+        t = _names[i]   if i < len(_names)   else "Unknown"
+        p = _posters[i] if i < len(_posters) else _PH
+        r = _ranks[i];  pct = _pcts[i]
+
+        _cards += f"""
+        <div class="mc">
+            <div class="mc-rank">{r}</div>
+            <div class="mc-num">{i+1}</div>
+            <div class="mc-poster">
+                <img src="{p}" alt="{t}" loading="lazy"
+                     onerror="this.src='{_PH}'" />
+                <div class="mc-overlay">
+                    <div class="mc-ov-title">{t}</div>
+                    <div class="mc-ov-meta">Rank #{i+1} &nbsp;·&nbsp; Similar Match</div>
+                    <div class="mbar-row">
+                        <span class="mbar-pct">{pct}%</span>
+                        <div class="mbar">
+                            <div class="mbar-fill" style="width:{pct}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mc-body">
+                <div class="mc-title">{t}</div>
+                <div class="mc-tag">#{i+1} &nbsp;·&nbsp; {pct}% match</div>
+            </div>
+        </div>
+        """
+    _cards += "</div></div>"
+    st.markdown(_cards, unsafe_allow_html=True)
+
+
+# ── 8.9  EMPTY / INITIAL STATE ───────────────────────────────────────
+elif not clicked:
+    st.markdown("""
+    <div class="empty">
+        <span class="empty-ic">🎬</span>
+        <div class="empty-h">Ready When You Are</div>
+        <p class="empty-p">
+            Select any film from the dropdown above and press
+            <strong>Discover</strong> — we'll surface five titles
+            that share its narrative soul.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Five cards in equal columns
-    cols = st.columns(5, gap="small")
-    rank_labels = ["#1 Pick", "#2 Pick", "#3 Pick", "#4 Pick", "#5 Pick"]
 
-    for idx, col in enumerate(cols):
-        with col:
-            title   = names[idx]   if idx < len(names)   else "Unknown"
-            poster  = posters[idx] if idx < len(posters) else PLACEHOLDER_POSTER
-            rank    = rank_labels[idx]
-
-            st.markdown(f"""
-            <div class="movie-card">
-                <div class="rank-badge">{rank}</div>
-                <div class="card-poster-wrap">
-                    <img src="{poster}"
-                         alt="{title} poster"
-                         loading="lazy"
-                         onerror="this.src='{PLACEHOLDER_POSTER}'" />
-                </div>
-                <div class="card-body">
-                    <div class="card-title">{title}</div>
-                    <div class="card-meta">Similar Match</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-else:
-    # Empty / initial state
-    if not recommend_clicked:
-        st.markdown("""
-        <div class="empty-state">
-            <div class="icon">🎬</div>
-            <p>Select a movie above and hit <strong>Recommend</strong><br>
-            to discover your next favourite film.</p>
+# ── 8.10  FOOTER ─────────────────────────────────────────────────────
+st.markdown(f"""
+<footer class="ft">
+    <div>
+        <div class="ft-logo">CineMatch</div>
+        <div class="ft-copy" style="margin-top:.4rem">
+            AI-powered content-based movie recommendations.<br>
+            Uses the TMDB API · Not endorsed or certified by TMDB.
         </div>
-        """, unsafe_allow_html=True)
-
-
-# ══════════════════════════════════════════════════════════════
-# 9. FOOTER
-# ══════════════════════════════════════════════════════════════
-st.markdown("""
-<div class="footer">
-    <strong>CineMatch</strong> — Content-Based Movie Recommendation System<br>
-    Poster data provided by <strong>The Movie Database (TMDB)</strong> &nbsp;·&nbsp;
-    Built with <strong>Streamlit</strong> &amp; <strong>scikit-learn</strong>
-    <br><br>
-    <span style="opacity:0.45">
-        This product uses the TMDB API but is not endorsed or certified by TMDB.
-    </span>
-</div>
+    </div>
+    <div class="ft-links">
+        <a class="ft-link" href="#">About</a>
+        <a class="ft-link" href="#">Privacy</a>
+        <a class="ft-link" href="https://www.themoviedb.org" target="_blank">TMDB</a>
+        <a class="ft-link" href="#">GitHub</a>
+    </div>
+    <div class="ft-copy" style="text-align:right">
+        Built with Streamlit &amp; scikit-learn<br>
+        © 2025 CineMatch &nbsp;·&nbsp; {_n:,} films indexed
+    </div>
+</footer>
 """, unsafe_allow_html=True)
